@@ -9,6 +9,13 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+// 获取当前文件的目录路径（ES模块兼容）
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const execAsync = promisify(exec);
 
@@ -18,7 +25,7 @@ function handleCommandLineArgs() {
   
   if (args.includes('--help') || args.includes('-h')) {
     console.log(`
-wxcloud-mcp v1.0.0 - 微信云开发CLI的MCP服务器
+wxcloud-mcp v1.0.1 - 微信云开发CLI的MCP服务器
 
 用法:
   wxcloud-mcp              启动MCP服务器
@@ -56,7 +63,7 @@ wxcloud-mcp v1.0.0 - 微信云开发CLI的MCP服务器
   }
   
   if (args.includes('--version') || args.includes('-v')) {
-    console.log('wxcloud-mcp v1.0.0');
+    console.log('wxcloud-mcp v1.0.1');
     process.exit(0);
   }
 }

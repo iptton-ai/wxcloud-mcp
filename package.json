@@ -1,7 +1,8 @@
 {
   "name": "wxcloud-mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A Model Context Protocol (MCP) server for WeChat Cloud CLI",
+  "type": "module",
   "main": "dist/index.js",
   "bin": {
     "wxcloud-mcp": "dist/index.js"
