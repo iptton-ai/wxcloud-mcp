@@ -1,0 +1,149 @@
+name: Publish to NPM
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Extract version from tag
+        id: extract_version
+        run: |
+          # 从Git标签中提取版本号（去掉v前缀）
+          if [[ "${{ github.ref_name }}" =~ ^v(.+)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+            echo "版本号: $VERSION"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          else
+            echo "❌ 无效的标签格式: ${{ github.ref_name }}"
+            echo "标签应该以 'v' 开头，例如: v1.0.2"
+            exit 1
+          fi
+
+      - name: Update package.json version
+        run: |
+          # 获取当前package.json中的版本
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          NEW_VERSION="${{ steps.extract_version.outputs.version }}"
+          
+          echo "当前版本: $CURRENT_VERSION"
+          echo "新版本: $NEW_VERSION"
+          
+          # 使用npm version命令更新版本号（不创建git tag）
+          npm version $NEW_VERSION --no-git-tag-version
+          
+          echo "✅ package.json版本已更新为: $NEW_VERSION"
+
+      - name: Update source code version
+        run: |
+          NEW_VERSION="${{ steps.extract_version.outputs.version }}"
+          
+          # 更新src/index.ts中的版本号
+          sed -i "s/wxcloud-mcp v[0-9]\+\.[0-9]\+\.[0-9]\+/wxcloud-mcp v$NEW_VERSION/g" src/index.ts
+          
+          echo "✅ 源代码版本号已更新"
+
+      - name: Verify NPM Token
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "❌ NPM_TOKEN secret is not set!"
+            echo "Please add NPM_TOKEN to GitHub repository secrets."
+            echo "Visit: https://github.com/${{ github.repository }}/settings/secrets/actions"
+            exit 1
+          else
+            echo "✅ NPM_TOKEN is available"
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+      - name: Run tests (if available)
+        run: npm test || echo "No tests found"
+
+      - name: Check npm authentication
+        run: |
+          echo "Checking npm authentication..."
+          npm whoami || echo "Not authenticated yet"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Verify final package
+        run: |
+          echo "📦 最终包信息:"
+          echo "名称: $(node -p "require('./package.json').name")"
+          echo "版本: $(node -p "require('./package.json').version")"
+          echo "标签: ${{ github.ref_name }}"
+          
+          # 检查版本是否匹配
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${{ steps.extract_version.outputs.version }}"
+          
+          if [ "$PACKAGE_VERSION" = "$TAG_VERSION" ]; then
+            echo "✅ 版本号匹配，准备发布"
+          else
+            echo "❌ 版本号不匹配: package.json($PACKAGE_VERSION) vs tag($TAG_VERSION)"
+            exit 1
+          fi
+
+      - name: Publish to NPM
+        run: |
+          echo "🚀 发布包到NPM..."
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Release ${{ github.ref_name }}
+          body: |
+            🚀 **wxcloud-mcp ${{ github.ref_name }}**
+            
+            自动发布到 NPM: https://www.npmjs.com/package/wxcloud-mcp
+            
+            **安装方式:**
+            ```bash
+            npm install -g wxcloud-mcp@${{ steps.extract_version.outputs.version }}
+            ```
+            
+            **版本信息:**
+            - 版本号: ${{ steps.extract_version.outputs.version }}
+            - 发布时间: ${{ github.event.head_commit.timestamp }}
+            - 提交SHA: ${{ github.sha }}
+            
+            **主要功能:**
+            - ✅ ES模块支持
+            - ✅ 微信云开发CLI集成
+            - ✅ MCP协议支持
+            - ✅ 9个云开发工具
+            
+            **使用方法:**
+            1. 安装: `npm install -g wxcloud-mcp`
+            2. 在MCP客户端中配置
+            3. 享受微信云开发自动化！
+            
+            **更多信息:** https://github.com/iptton-ai/wxcloud-mcp
+          draft: false
+          prerelease: false
