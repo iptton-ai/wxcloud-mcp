@@ -111,13 +111,13 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v1
         if: success()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ github.ref_name }}
-          release_name: Release ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
           body: |
             🚀 **wxcloud-mcp ${{ github.ref_name }}**
             
@@ -147,3 +147,20 @@ jobs:
             **更多信息:** https://github.com/iptton-ai/wxcloud-mcp
           draft: false
           prerelease: false
+
+      - name: Commit version update (optional)
+        if: success()
+        run: |
+          # 可选：将版本更新提交回仓库
+          # 这样仓库中的版本号会保持最新
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          if git diff --quiet; then
+            echo "没有需要提交的更改"
+          else
+            git add package.json src/index.ts
+            git commit -m "chore: bump version to ${{ steps.extract_version.outputs.version }} [skip ci]"
+            git push origin HEAD:main
+            echo "✅ 版本更新已提交回仓库"
+          fi
