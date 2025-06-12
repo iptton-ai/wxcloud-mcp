@@ -109,13 +109,14 @@ class WxCloudMCPServer {
               properties: {
                 envId: {
                   type: 'string',
-                  description: '环境ID（可选）'
+                  description: '环境ID（必需，使用 wxcloud_env_list 获取）'
                 },
                 serviceName: {
                   type: 'string',
                   description: '服务名称（可选）'
                 }
-              }
+              },
+              required: ['envId']
             }
           },
           {
@@ -216,7 +217,7 @@ class WxCloudMCPServer {
               properties: {
                 envId: {
                   type: 'string',
-                  description: '环境ID'
+                  description: '环境ID（必需，使用 wxcloud_env_list 获取）'
                 },
                 serviceName: {
                   type: 'string',
@@ -232,7 +233,8 @@ class WxCloudMCPServer {
                   description: '不执行实际部署，仅预览',
                   default: false
                 }
-              }
+              },
+              required: ['envId']
             }
           },
           {
@@ -368,9 +370,27 @@ class WxCloudMCPServer {
 
   private async executeWxCloudCommand(command: string): Promise<{ stdout: string; stderr: string }> {
     try {
-      const result = await execAsync(command);
+      // 添加超时控制，防止命令挂起
+      const timeoutMs = 30000; // 30秒超时
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      
+      const result = await execAsync(command, {
+        signal: controller.signal,
+        timeout: timeoutMs
+      });
+      
+      clearTimeout(timeoutId);
       return result;
     } catch (error: any) {
+      // 处理超时和其他错误
+      if (error.name === 'AbortError' || error.code === 'ETIME') {
+        return {
+          stdout: '',
+          stderr: `❌ 命令执行超时 (30秒)。可能原因：\n1. 命令进入交互模式\n2. 网络连接问题\n3. 未登录wxcloud CLI\n\n执行的命令: ${command}`
+        };
+      }
+      
       // 即使命令返回非零退出码，也可能包含有用的输出
       return {
         stdout: error.stdout || '',
@@ -379,12 +399,76 @@ class WxCloudMCPServer {
     }
   }
 
-  private async handleServiceList(args: any) {
-    let command = 'wxcloud service:list --json';
-    
-    if (args.envId) {
-      command += ` --envId=${args.envId}`;
+  // 获取默认环境ID的辅助方法
+  private async getDefaultEnvId(): Promise<{ envId?: string; error?: string }> {
+    try {
+      const envResult = await this.executeWxCloudCommand('wxcloud env:list --json');
+      
+      if (envResult.stderr) {
+        return { error: `获取环境列表失败：${envResult.stderr}` };
+      }
+
+      // 处理包含动画字符的输出，提取JSON部分
+      let output = envResult.stdout;
+      
+      // 移除所有控制字符和动画字符
+      output = output.replace(/\x1b\[[0-9;]*[mGK]/g, ''); // ANSI escape codes
+      output = output.replace(/[\u2800-\u28FF]/g, ''); // Braille patterns (spinner chars)
+      output = output.replace(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/g, ''); // Common spinner characters
+      output = output.replace(/[^\x20-\x7E\n\r\t{}[\]",:]/g, ''); // Keep only printable ASCII and JSON chars
+      
+      // 查找JSON内容，通常以{"code": 开始
+      const jsonStart = output.indexOf('{"code"');
+      if (jsonStart === -1) {
+        return { error: `未找到有效的JSON响应。原始输出：${output.substring(0, 100)}...` };
+      }
+      
+      const jsonStr = output.substring(jsonStart).trim();
+      
+      try {
+        const jsonData = JSON.parse(jsonStr);
+        
+        if (jsonData && jsonData.data && jsonData.data.length > 0) {
+          return { envId: jsonData.data[0].EnvId };
+        } else {
+          return { error: '没有找到可用的环境。请先创建环境。' };
+        }
+      } catch (parseError) {
+        return { error: `JSON解析失败：${parseError}。提取的内容：${jsonStr.substring(0, 200)}...` };
+      }
+      
+    } catch (error) {
+      return { error: `获取环境列表异常：${error}。请手动指定环境ID。` };
     }
+  }
+
+  private async handleServiceList(args: any) {
+    // 如果没有提供envId，提示用户手动指定
+    if (!args.envId) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `❌ 请指定环境ID参数。
+
+使用方法：
+1. 先查看可用环境：调用 wxcloud_env_list 工具
+2. 然后指定环境ID调用此工具
+
+示例：
+{
+  "envId": "prod-7g8u1mb18fbf5ba5",
+  "serviceName": "your-service-name"  // 可选
+}
+
+这样可以避免交互模式导致的超时问题。`
+          }
+        ]
+      };
+    }
+
+    let command = `wxcloud service:list --json --envId=${args.envId}`;
+    
     if (args.serviceName) {
       command += ` --serviceName=${args.serviceName}`;
     }
@@ -395,7 +479,7 @@ class WxCloudMCPServer {
       content: [
         {
           type: 'text',
-          text: `服务列表查询结果：\n\n输出：\n${result.stdout}\n\n${result.stderr ? `错误信息：\n${result.stderr}` : ''}`
+          text: `服务列表查询结果 (环境: ${args.envId})：\n\n输出：\n${result.stdout}\n\n${result.stderr ? `错误信息：\n${result.stderr}` : ''}`
         }
       ]
     };
@@ -464,9 +548,32 @@ class WxCloudMCPServer {
   }
 
   private async handleDeploy(args: any) {
-    let command = 'wxcloud deploy';
+    // 确保有环境ID，避免进入交互模式
+    if (!args.envId) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `❌ 请指定环境ID参数。
+
+使用方法：
+1. 先查看可用环境：调用 wxcloud_env_list 工具
+2. 然后指定环境ID调用此工具
+
+示例：
+{
+  "envId": "prod-7g8u1mb18fbf5ba5",
+  "serviceName": "your-service-name",
+  "port": 3000,
+  "dryRun": true
+}`
+          }
+        ]
+      };
+    }
+
+    let command = `wxcloud deploy --envId=${args.envId}`;
     
-    if (args.envId) command += ` --envId=${args.envId}`;
     if (args.serviceName) command += ` --serviceName=${args.serviceName}`;
     if (args.port) command += ` --port=${args.port}`;
     if (args.dryRun) command += ' --dryRun';
@@ -477,7 +584,7 @@ class WxCloudMCPServer {
       content: [
         {
           type: 'text',
-          text: `部署${args.dryRun ? '预览' : ''}结果：\n\n输出：\n${result.stdout}\n\n${result.stderr ? `错误信息：\n${result.stderr}` : ''}`
+          text: `部署${args.dryRun ? '预览' : ''}结果 (环境: ${args.envId})：\n\n输出：\n${result.stdout}\n\n${result.stderr ? `错误信息：\n${result.stderr}` : ''}`
         }
       ]
     };
