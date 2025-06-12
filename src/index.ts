@@ -12,6 +12,58 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
+// 处理命令行参数
+function handleCommandLineArgs() {
+  const args = process.argv.slice(2);
+  
+  if (args.includes('--help') || args.includes('-h')) {
+    console.log(`
+wxcloud-mcp v1.0.0 - 微信云开发CLI的MCP服务器
+
+用法:
+  wxcloud-mcp              启动MCP服务器
+  wxcloud-mcp --help       显示此帮助信息
+  wxcloud-mcp --version    显示版本信息
+
+功能:
+  通过Model Context Protocol (MCP) 为AI助手提供微信云开发CLI操作能力
+
+支持的操作:
+  • 服务管理 (创建、查看、配置、删除)
+  • 应用部署
+  • 云函数上传
+  • 环境管理
+  • 文件存储操作
+
+配置说明:
+  在Claude Desktop等MCP客户端中添加以下配置:
+  {
+    "mcpServers": {
+      "wxcloud": {
+        "command": "wxcloud-mcp"
+      }
+    }
+  }
+
+前置要求:
+  1. 安装微信云开发CLI: npm install -g @wxcloud/cli
+  2. 完成登录: wxcloud login
+
+更多信息:
+  https://github.com/iptton-ai/wxcloud-mcp
+`);
+    process.exit(0);
+  }
+  
+  if (args.includes('--version') || args.includes('-v')) {
+    console.log('wxcloud-mcp v1.0.0');
+    process.exit(0);
+  }
+}
+
+// 在启动前处理命令行参数
+handleCommandLineArgs();
+
 class WxCloudMCPServer {
   private server: Server;
 
