@@ -27,7 +27,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/iptton-ai/wxcloud-mcp.git"
+    "url": "git+https://github.com/iptton-ai/wxcloud-mcp.git"
   },
   "bugs": {
     "url": "https://github.com/iptton-ai/wxcloud-mcp/issues"

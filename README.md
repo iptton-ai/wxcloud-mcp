@@ -13,8 +13,24 @@
 
 ## 安装
 
+### 方法1: 从npm安装（推荐）
+
 ```bash
 npm install -g wxcloud-mcp
+```
+
+### 方法2: 从GitHub安装
+
+```bash
+npm install -g github:iptton-ai/wxcloud-mcp
+```
+
+### 方法3: 克隆并构建
+
+```bash
+git clone https://github.com/iptton-ai/wxcloud-mcp.git
+cd wxcloud-mcp
+./install.sh
 ```
 
 ## 配置
