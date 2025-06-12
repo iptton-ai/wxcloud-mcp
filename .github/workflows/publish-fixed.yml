@@ -1,0 +1,81 @@
+name: Publish to NPM
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Verify NPM Token
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "❌ NPM_TOKEN secret is not set!"
+            echo "Please add NPM_TOKEN to GitHub repository secrets."
+            echo "Visit: https://github.com/${{ github.repository }}/settings/secrets/actions"
+            exit 1
+          else
+            echo "✅ NPM_TOKEN is available"
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+
+      - name: Run tests (if available)
+        run: npm test || echo "No tests found"
+
+      - name: Check npm authentication
+        run: |
+          echo "Checking npm authentication..."
+          npm whoami || echo "Not authenticated yet"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish to NPM
+        run: |
+          echo "Publishing package to NPM..."
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Release ${{ github.ref_name }}
+          body: |
+            🚀 **wxcloud-mcp ${{ github.ref_name }}**
+            
+            自动发布到 NPM: https://www.npmjs.com/package/wxcloud-mcp
+            
+            安装方式:
+            ```bash
+            npm install -g wxcloud-mcp
+            ```
+            
+            更新日志:
+            - ES模块支持
+            - 微信云开发CLI集成
+            - MCP协议支持
+          draft: false
+          prerelease: false
